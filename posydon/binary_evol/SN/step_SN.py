@@ -267,6 +267,7 @@ class StepSN(object):
         self.Sukhbold16_engines = "Sukhbold+16-engine"
         self.Patton20_engines = "Patton&Sukhbold20-engine"
         self.Couch20_engines = "Couch+20-engine"
+        self.Maltsev25_engines = "Maltsev+25-engine"
 
         self.mechanisms = [
             self.Fryer12_rapid,
@@ -275,7 +276,8 @@ class StepSN(object):
             self.direct_collapse_hecore,
             self.Sukhbold16_engines,
             self.Patton20_engines,
-            self.Couch20_engines
+            self.Couch20_engines,
+            self.Maltsev25_engines
         ]
 
         if self.mechanism in self.mechanisms:
@@ -285,6 +287,7 @@ class StepSN(object):
                 self.Fryer12_delayed,
                 self.direct_collapse,
                 self.direct_collapse_hecore,
+                self.Maltsev25_engines
             ]:
                 self.Sukhbold_corecollapse_engine = None
 
@@ -610,6 +613,7 @@ class StepSN(object):
                 self.Fryer12_delayed,
                 self.direct_collapse,
                 self.direct_collapse_hecore,
+                self.Maltsev25_engines
             ]:
                 # m_core = star.co_core_mass
 
@@ -1348,10 +1352,48 @@ class StepSN(object):
                 m_fb = 0.0
                 m_rembar = m_proto + m_fb
                 state = 'NS'
+            
+            
             else:
                 m_rembar, f_fb, state = self.Patton20_corecollapse(star,
                                                 self.engine,
                                                 self.conserve_hydrogen_envelope)
+        elif self.mechanism == self.Maltsev25_engines:
+            
+            if star.SN_type == "ECSN":
+                if self.ECSN == 'Podsiadlowski+04':
+                    m_proto = 1.38
+                else:
+                    m_proto = m_core
+                m_fb = 0.0
+                f_fb = 0.0
+            
+            else:
+                CO_core_mass, C_core_abundance = self.get_CO_core_params(star, self.approx_at_he_depletion)
+                M4, mu4 = self.get_M4_mu4_Patton20(CO_core_mass, C_core_abundance)
+                M4 = M4[0]
+                mu4 = mu4[0]
+                star.M4 = M4
+                star.mu4 = mu4
+                
+                k1 = 0.005
+                k2 = 0.420
+                
+                if mu4 < (k1 + k2 * mu4 * M4):
+                    
+                    if conserve_hydrogen_envelope:
+                        m_rem = star.mass
+                    else:
+                        m_rem = star.he_core_mass
+                        f_fb = 1.0
+                        state = 'BH'
+                    
+                else:    
+                    m_rem = M4
+                    f_fb = 0.0
+                    state = 'NS'
+                    
+            
         else:
             raise ValueError("Mechanism %s not supported." % self.mechanism)
 
