@@ -308,7 +308,7 @@ class StepSN(object):
                     path_engine_dataset=self.path_to_Couch_datasets,
                     verbose=self.verbose)
 
-            elif self.mechanism == self.Patton20_engines:
+            elif self.mechanism == self.Patton20_engines or self.mechanism == self.Maltsev25_engines:
                 self.path_to_Patton_datasets = path_to_Patton_datasets
 
                 def format_data_Patton20(file_name):
@@ -364,6 +364,8 @@ class StepSN(object):
                     'Kepler_mu4_table.dat')
                 CO_core_params_M4, M4_target = format_data_Patton20(
                     'Kepler_M4_table.dat')
+                CO_core_params_Xi, Xi_target = format_data_Patton20(
+                    'Kepler_Xi_table.dat')
 
                 n_neighbors = 5
 
@@ -376,6 +378,10 @@ class StepSN(object):
                 self.mu4_interpolator = neighbors.KNeighborsRegressor(
                     n_neighbors, weights='distance')
                 self.mu4_interpolator.fit(CO_core_params_mu4, mu4_target)
+
+                self.Xi_interpolator = neighbors.KNeighborsRegressor(
+                    n_neighbors, weights='distance')
+                self.Xi_interpolator.fit(CO_core_params_Xi, Xi_target)
                 if self.verbose:
                     print('Done')
         else:
@@ -1175,7 +1181,7 @@ class StepSN(object):
 
         return None, None, None, SN_type
 
-    def compute_m_rembar(self, star, m_PISN):
+    def maltrembar(self, star, m_PISN):
         """Compute supernova remnant barionic mass.
 
         We follow the selected electron-capture and core-collapse mechanisms
@@ -1371,27 +1377,60 @@ class StepSN(object):
             else:
                 CO_core_mass, C_core_abundance = self.get_CO_core_params(star, self.approx_at_he_depletion)
                 M4, mu4 = self.get_M4_mu4_Patton20(CO_core_mass, C_core_abundance)
-                M4 = M4[0]
-                mu4 = mu4[0]
+                M4 = M4[0] #mass where entropy is 4k_B
+                mu4 = mu4[0] #radial mass gradient at M_4
                 star.M4 = M4
                 star.mu4 = mu4
                 
                 k1 = 0.005
                 k2 = 0.420
                 
-                if mu4 < (k1 + k2 * mu4 * M4):
+                if mu4 < (k1 + k2 * mu4 * M4): #failed & remnant is a direct BH
                     
-                    if conserve_hydrogen_envelope:
+                    if self.conserve_hydrogen_envelope:
                         m_rem = star.mass
+                        
                     else:
                         m_rem = star.he_core_mass
-                        f_fb = 1.0
+                        f_fb = 1.0 
                         state = 'BH'
                     
-                else:    
-                    m_rem = M4
-                    f_fb = 0.0
-                    state = 'NS'
+                else: #successful explosion possible outcomes
+                    
+                    xi_2pt5 = self.get_Xi_Patton20(CO_core_mass, C_core_abundance)
+                    if (xi_2pt5 > 0.04) and (xi_2pt5 < 0.4):
+                        
+                        a = 1.75
+                        b = -0.044
+                    
+                        if (xi_2pt5 > a * mu4 * M4 + b) and (M4 / CO_core_mass < 0.6): #fallback BH
+                            
+                            if self.conserve_hydrogen_envelope:
+                                m_rem = star.mass
+                        
+                            else:
+                                m_rem = star.he_core_mass
+                                f_fb = 1.0
+                                state = 'BH'
+                            
+                            
+                    elif (xi_2pt5 > 0.4) and (M4 / CO_core_mass < 0.6): #fallback BH
+                        
+                        if self.conserve_hydrogen_envelope:
+                            m_rem = star.mass
+                        
+                        else:
+                            m_rem = star.he_core_mass
+                            f_fb = 1.0
+                            state = 'BH'
+                            
+                    
+                    else: #everything else is a NS
+                        m_rem = M4
+                        f_fb = 0.0
+                        state = 'NS'
+                        
+                        #add in M_CO 6 and 15.4 threshold?
                     
             
         else:
@@ -2140,6 +2179,11 @@ class StepSN(object):
         mu4 = self.mu4_interpolator.predict([[C_core_abundance, CO_core_mass]])
 
         return M4, mu4
+    
+    def get_Xi_Patton20(self, CO_core_mass, C_core_abundance):
+        Xi = self.Xi_interpolator.predict([[C_core_abundance, CO_core_mass]])
+
+        return Xi
 
     def Patton20_corecollapse(self, star, engine, conserve_hydrogen_envelope=False):
         """Compute supernova final remnant mass and fallback fraction.
